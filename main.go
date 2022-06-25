@@ -27,7 +27,7 @@ var (
 
 
         pingCounter = prometheus.NewCounter(prometheus.CounterOpts{
-                Name: "ping_request_count",
+                Name: "myapp_ping_request_count",
                 Help: "No of request handled by Ping handler",
         })
 )
@@ -35,19 +35,28 @@ var (
 func ping(w http.ResponseWriter, req *http.Request) {
    pingCounter.Inc()
    log.Printf("pong")
+    w.Write([]byte("PONG"))
 }
 
 
-func logger(next http.Handler) http.Handler {
+func extralogger(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        log.Printf("query %s %s", r.Method, r.URL.Path)
+        log.Printf("query headers %+v", r.Header)
         next.ServeHTTP(w, r)
     })
 }
+
+func logger(next http.Handler) http.Handler {
+    return extralogger(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        log.Printf("query received %s %s", r.Method, r.URL.Path)
+        next.ServeHTTP(w, r)
+    }))
+}
+
 func main() {
         recordMetrics()
 
-        http.HandleFunc("/ping", logger(ping))
+        http.Handle("/ping", logger(extralogger(http.HandlerFunc(ping))))
         http.Handle("/metrics", logger(promhttp.Handler()))
         http.ListenAndServe(":8090", nil)
 }
