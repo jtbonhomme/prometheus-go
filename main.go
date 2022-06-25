@@ -46,32 +46,65 @@ func logger(next http.Handler) http.HandlerFunc {
 	}))
 }
 
+func handlerFuncAdapter(next http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r)
+	}
+}
+
 func handlePing() http.HandlerFunc {
-    return func(w http.ResponseWriter, req *http.Request) {
-    	pingCounter.Inc()
-	    log.Printf("pong")
-	    w.Write([]byte("PONG"))
-    }
+	return func(w http.ResponseWriter, req *http.Request) {
+		pingCounter.Inc()
+		log.Printf("pong")
+		w.Write([]byte("PONG"))
+	}
 }
 
 func handleIndex() http.HandlerFunc {
-    return func(writer http.ResponseWriter, request *http.Request) {
-        writer.Write([]byte("Welcome"))
+	return func(writer http.ResponseWriter, request *http.Request) {
+		writer.Write([]byte("Welcome"))
+	}
+}
+
+type Route struct {
+    Method      string
+    Pattern     string
+    HandlerFunc http.HandlerFunc
+}
+
+func contact() http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		writer.Write([]byte("Contact"))
+	}
+}
+
+func home() http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		writer.Write([]byte("Home"))
+	}
+}
+
+var Routes = []Route{
+    Route{"GET", "/home", home()},
+    Route{"GET", "/contact", logger(contact())},
+}
+
+func setRoutes(router *httprouter.Router) {
+    for _, route := range Routes {
+        router.HandlerFunc(route.Method, route.Pattern, route.HandlerFunc)
     }
 }
 
 func main() {
 	recordMetrics()
 
-	//http.Handle("/ping", logger(extralogger(http.HandlerFunc(ping))))
-	//http.Handle("/metrics", logger(promhttp.Handler()))
-
 	router := httprouter.New()
 	router.GlobalOPTIONS = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Access-Control-Request-Method") != "" {
 			// Set CORS headers
 			header := w.Header()
-			header.Set("Access-Control-Allow-Methods", header.Get("Allow"))
+			header.Set("Access-Control-Allow-Heders", "Access-Control-Expose-Headers, Content-Type, Content-Compression, X-Requested-With")
+			header.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			header.Set("Access-Control-Allow-Origin", "*")
 		}
 
@@ -79,9 +112,11 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	router.HandlerFunc("GET", "/", handleIndex())
+	router.HandlerFunc("GET", "/", logger(handleIndex()))
 	router.HandlerFunc("GET", "/ping", logger(extralogger(http.HandlerFunc(handlePing()))))
-	router.HandlerFunc("GET", "/metrics", logger(promhttp.Handler()))
+	router.HandlerFunc("GET", "/metrics", handlerFuncAdapter(promhttp.Handler()))
+
+    setRoutes(router)
 
 	http.ListenAndServe(":8090", router)
 }
